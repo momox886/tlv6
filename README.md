@@ -4,6 +4,10 @@ Transmettre l'image d'une **caméra USB stéréo** (double objectif) vers un **c
 Meta Quest**, en **WebSocket**, avec le **minimum de latence**, pour une **immersion
 en 3D** dans le navigateur du casque — **sans compiler la moindre application**.
 
+> 🐧 **Windows n'est pas obligatoire.** Le projet tourne aussi sur un hôte **Linux
+> natif** — où il est plus simple à installer, plus rapide, et plus faible en
+> latence. Voir [docs/LINUX.md](docs/LINUX.md).
+
 ```
   ┌─────────────────┐   USB    ┌──────────────────────────┐
   │ Caméra stéréo    │─────────>│ PC (Windows + WSL2)      │
@@ -130,8 +134,35 @@ Cliquez sur **« Entrer en VR »**. Vous êtes dans l'image, en relief. 🎉
 > ⚠️ **`<IP-du-PC>` n'est presque jamais l'adresse affichée par le serveur.**
 > Voir la section suivante — c'est le piège numéro un.
 
-> ⚠️ **`<IP-du-PC>` n'est presque jamais l'adresse affichée par le serveur.**
-> Voir la section suivante — c'est le piège numéro un.
+---
+
+## 🐧 Linux natif (recommandé si vous n'êtes pas obligé d'utiliser Windows)
+
+**Aucun code n'est spécifique à Windows.** Le serveur et le client sont du Node.js
+et du navigateur ordinaires : ce projet tourne tel quel sur un Linux natif — et
+c'est la **meilleure** configuration.
+
+En Linux natif, on **supprime d'un coup** : `usbipd` (et son aller-retour USB/IP),
+le NAT de WSL2, le mode `mirrored`, le pare-feu Hyper-V, et les copies de
+certificat depuis `/mnt/c`. On **gagne** aussi l'accès aux encodeurs matériels
+(VAAPI / NVENC / QSV), inutilisables depuis WSL2 — donc moins de CPU et souvent
+moins de latence.
+
+```bash
+sudo apt install -y ffmpeg v4l-utils
+sudo usermod -aG video $USER          # puis reconnectez-vous
+cd stereo-vr-stream && npm install && cp .env.example .env
+npm run probe                         # relever les formats réels de la caméra
+npm run doctor                        # vérifier que tout est vert
+npm start                             # ou : sudo bash scripts/install-service.sh
+```
+
+➡️ Guide complet : **[docs/LINUX.md](docs/LINUX.md)** (accès caméra, encodage
+matériel, pare-feu, Tailscale natif, service systemd, dépannage).
+
+> Le reste de ce README décrit la configuration **Windows + WSL2**, qui est celle
+> pour laquelle le projet a été écrit à l'origine. Si vous êtes sous Linux, les
+> sections sur `usbipd`, le NAT et les scripts `*.ps1` **ne vous concernent pas**.
 
 ---
 
@@ -264,6 +295,17 @@ distance, mode stéréo, et **échelle de rendu** (baisser = moins de GPU = moin
 
 ## 🔧 Diagnostic
 
+Un contrôle automatique de l'environnement (Node, ffmpeg, caméra, groupes,
+port, réseau, Tailscale) — en lecture seule et **sans `sudo`** :
+
+```bash
+npm run doctor
+```
+
+Il indique la correction à apporter pour chaque point rouge.
+
+Ensuite, dans le navigateur :
+
 - `http://<PC>:8080/` — vue 2D avec **mesure de latence** (aller simple, aller-retour,
   décodage, images/s, images sautées).
 - `http://<PC>:8080/stats` — état JSON du serveur (clients, codec, débit réel).
@@ -275,12 +317,13 @@ distance, mode stéréo, et **échelle de rendu** (baisser = moins de GPU = moin
 npm test
 ```
 
-Trois vérifications, sans caméra (elles utilisent la source synthétique) :
+Quatre vérifications, sans caméra (elles utilisent la source synthétique) :
 
 | Test | Ce qu'il valide |
 |---|---|
 | `test/annexb.test.mjs` | découpage H.264 → images, détection des images clés et du codec |
 | `test/integration.test.mjs` | démarre le serveur, se connecte en WebSocket, valide tout le protocole |
+| `test/tls.test.mjs` | HTTPS + WSS de bout en bout (le « contexte sécurisé » exigé par WebXR) |
 | `test/math.test.mjs` | matrices de projection (une erreur = image invisible dans le casque) |
 
 À relancer après tout changement de configuration : ils attrapent les régressions
@@ -306,6 +349,8 @@ stereo-vr-stream/
 │   ├── vr-renderer.js  # rendu stéréo WebGL (écran plan / dôme 180°)
 │   └── xr-math.js      # petites matrices 4×4
 ├── scripts/
+│   ├── doctor.sh           # diagnostic complet de l'environnement (tous OS)
+│   ├── install-service.sh  # service systemd (Linux natif)
 │   ├── attach-camera.ps1   # usbipd : caméra Windows → WSL2
 │   ├── probe-camera.sh     # formats supportés par la caméra
 │   ├── allow-lan.ps1       # pare-feu Windows + Hyper-V (accès du casque)
@@ -320,6 +365,7 @@ stereo-vr-stream/
 └── docs/
     ├── ARCHITECTURE.md     # comment ça marche, en détail
     ├── LATENCY.md          # budget de latence et réglages
+    ├── LINUX.md            # installation sur un hôte Linux natif
     ├── HTTPS-TAILSCALE.md  # HTTPS approuvé sans avertissement
     └── ROADMAP-WEBRTC.md   # l'étape suivante : WebRTC
 ```

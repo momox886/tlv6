@@ -154,13 +154,25 @@ function prefixLength(mask) {
     .reduce((bits, octet) => bits + ((Number(octet) >>> 0).toString(2).match(/1/g)?.length ?? 0), 0);
 }
 
+// Sommes-nous dans WSL ? On lit la version du noyau, qui contient toujours
+// « microsoft » sous WSL2 (ex. « 6.18.54.1-microsoft-standard-WSL2 »).
+// Indispensable pour ne pas confondre un vrai réseau 172.16/12 (fréquent en
+// entreprise et chez les fournisseurs) avec le NAT interne de WSL.
+function isWsl() {
+  if (process.platform !== 'linux') return false;
+  try {
+    return /microsoft|wsl/i.test(fs.readFileSync('/proc/sys/kernel/osrelease', 'utf8'));
+  } catch {
+    return false;
+  }
+}
+
 // Le commutateur virtuel de WSL2 en mode NAT utilise toujours un /20 à l'intérieur
 // de 172.16.0.0/12 — une adresse qui n'existe que derrière Windows et que le casque
 // ne peut donc pas joindre.
 //
 // On se fie au « /20 » et pas seulement au préfixe 172.16/12 : de vrais réseaux
-// locaux utilisent aussi 172.16.0.0/12 (c'est le cas ici, le Wi-Fi est en
-// 172.16.117.x), et s'y fier produirait une fausse alerte.
+// locaux utilisent aussi 172.16.0.0/12, et s'y fier produirait une fausse alerte.
 function looksLikeWslNat({ address, prefix }) {
   const [a, b] = address.split('.').map(Number);
   return prefix === 20 && a === 172 && b >= 16 && b <= 31;
@@ -169,6 +181,11 @@ function looksLikeWslNat({ address, prefix }) {
 server.listen(config.port, config.host, () => {
   const scheme = config.tls ? 'https' : 'http';
   const addrs = localAddresses();
+  // Sur un Linux natif (ou macOS), ce diagnostic n'a aucun sens : le serveur est
+  // directement sur le réseau local.
+  const onWsl = isWsl();
+  const isWslNat = (addr) => onWsl && looksLikeWslNat(addr);
+
   console.log('');
   console.log('  Flux stéréo faible latence');
   console.log('  ─────────────────────────────────────────────');
@@ -178,12 +195,12 @@ server.listen(config.port, config.host, () => {
   console.log(`  Vue 2D    : ${scheme}://localhost:${config.port}/`);
   console.log(`  Vue VR    : ${scheme}://localhost:${config.port}/vr.html`);
   for (const addr of addrs) {
-    const note = looksLikeWslNat(addr)
+    const note = isWslNat(addr)
       ? '   ← réseau interne WSL2, injoignable depuis le casque'
       : `   (${addr.name})`;
     console.log(`  Casque    : ${scheme}://${addr.address}:${config.port}/vr.html${note}`);
   }
-  if (addrs.some(looksLikeWslNat)) {
+  if (addrs.some(isWslNat)) {
     console.log('');
     console.log('  ⚠  WSL2 est en réseau NAT : aucune adresse du réseau local n\'est');
     console.log('     disponible, le casque ne peut pas joindre le serveur même sur le');

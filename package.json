@@ -11,9 +11,11 @@
     "start": "node server/index.js",
     "test-source": "SOURCE=test node server/index.js",
     "test": "node test/annexb.test.mjs && node test/integration.test.mjs && node test/tls.test.mjs && node test/math.test.mjs",
+    "doctor": "bash scripts/doctor.sh",
     "probe": "bash scripts/probe-camera.sh",
     "cert": "bash scripts/gen-cert.sh",
-    "cert:tailscale": "bash scripts/tailscale-cert.sh"
+    "cert:tailscale": "bash scripts/tailscale-cert.sh",
+    "service": "bash scripts/install-service.sh"
   },
   "dependencies": {
     "ws": "^8.18.0"
