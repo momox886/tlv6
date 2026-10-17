@@ -21,6 +21,15 @@ function setStatus(text, kind) {
   statusEl.className = `pill ${kind}`;
 }
 
+// WebCodecs et WebXR n'existent que dans un « contexte sécurisé ». Le dire tout
+// de suite évite de chercher ailleurs quand la page reste noire.
+if (!window.isSecureContext) {
+  log(
+    `Origine NON sécurisée (${location.origin}) : WebCodecs et WebXR sont bloqués. ` +
+      'Ouvrez la page en HTTPS, ou depuis http://localhost sur la machine du serveur.',
+  );
+}
+
 // Deux buffers annexes pour le mode anaglyphe (rouge/cyan).
 const leftBuf = document.createElement('canvas');
 const rightBuf = document.createElement('canvas');
@@ -112,6 +121,27 @@ player.addEventListener('fatal', (e) => {
 });
 player.addEventListener('drop', () => {
   /* comptabilisé dans le tableau de bord */
+});
+
+// Rien ne s'affiche alors que la connexion est établie : on explique, et on
+// interroge /stats pour savoir de quel côté se situe le problème.
+player.addEventListener('stalled', async (e) => {
+  setStatus('aucune image', 'bad');
+  log("Rien ne s'affiche — " + e.detail);
+  try {
+    const s = await (await fetch('/stats')).json();
+    log(
+      `Côté serveur : ${s.frames} image(s) diffusée(s), codec=${s.codec ?? 'inconnu'}, ` +
+        `clients=${s.clients}, débit=${s.bitrateMbps} Mb/s, source=${s.source}`,
+    );
+    log(
+      s.frames === 0
+        ? "→ le serveur ne produit rien : regardez la sortie ffmpeg dans le terminal."
+        : '→ le serveur diffuse bien : le blocage est dans ce navigateur.',
+    );
+  } catch {
+    /* /stats injoignable : le message ci-dessus suffit */
+  }
 });
 
 el('eye').addEventListener('change', (e) => {

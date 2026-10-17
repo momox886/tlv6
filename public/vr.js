@@ -18,6 +18,14 @@ function setStatus(text, kind) {
   el('status').className = `pill ${kind}`;
 }
 
+// WebCodecs et WebXR n'existent que dans un « contexte sécurisé ».
+if (!window.isSecureContext) {
+  log(
+    `Origine NON sécurisée (${location.origin}) : WebCodecs et WebXR sont bloqués. ` +
+      'Passez en HTTPS (ou http://localhost).',
+  );
+}
+
 const renderer = new StereoRenderer(canvas, { mode: 'screen', vfovDeg: 60, distance: 2, stereo: 'sbs' });
 
 let player = null;
@@ -181,6 +189,22 @@ player.addEventListener('fatal', (e) => {
   log('Fatal : ' + e.detail);
 });
 player.addEventListener('decodeerror', (e) => log('Erreur décodage : ' + (e.detail?.message ?? e.detail)));
+player.addEventListener('fatal', (e) => {
+  setStatus('erreur', 'bad');
+  log('Fatal : ' + e.detail);
+});
+
+// Même diagnostic que la vue 2D, mais affiché dans le casque.
+player.addEventListener('stalled', async (e) => {
+  setStatus('aucune image', 'bad');
+  log("Rien ne s'affiche — " + e.detail);
+  try {
+    const s = await (await fetch('/stats')).json();
+    log(`Côté serveur : ${s.frames} image(s), codec=${s.codec ?? 'inconnu'}, clients=${s.clients}`);
+  } catch {
+    /* sans importance */
+  }
+});
 
 setInterval(() => {
   el('oneWay').textContent = player.oneWayMs.toFixed(1);

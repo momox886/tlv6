@@ -127,9 +127,26 @@ server.on('error', onListenError);
 wss.on('error', onListenError);
 
 // Démarrage de la capture vidéo.
+//
+// On journalise la détection du codec et la toute première image : sans cela, un
+// écran noir dans le navigateur ne laisse AUCUNE trace côté serveur, et il devient
+// impossible de savoir si le problème vient de ffmpeg ou du navigateur.
+let loggedCodec = null;
 const capture = startCapture(config, {
-  onCodec: (codec) => hub.setCodec(codec),
-  onAccessUnit: (au, isKey) => hub.broadcast(au, isKey),
+  onCodec: (codec) => {
+    if (codec !== loggedCodec) {
+      loggedCodec = codec;
+      console.log(`[flux] codec H.264 détecté : ${codec}`);
+    }
+    hub.setCodec(codec);
+  },
+  onAccessUnit: (au, isKey) => {
+    if (hub.stats.frames === 0) {
+      console.log(`[flux] première image encodée reçue (${au.length} octets) — le flux est vivant.`);
+      console.log(`[flux] ouvrez ${config.tls ? 'https' : 'http'}://localhost:${config.port}/ dans un navigateur.`);
+    }
+    hub.broadcast(au, isKey);
+  },
 });
 
 // Chaque interface IPv4 utilisable, avec son nom et la longueur de son préfixe.
