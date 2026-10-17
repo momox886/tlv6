@@ -1,0 +1,21 @@
+{
+  "name": "stereo-vr-stream",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Flux vidéo stéréo ultra-faible latence : caméra USB (SBS) -> WebSocket -> WebCodecs -> WebXR (Meta Quest)",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "test-source": "SOURCE=test node server/index.js",
+    "test": "node test/annexb.test.mjs && node test/integration.test.mjs && node test/tls.test.mjs && node test/math.test.mjs",
+    "probe": "bash scripts/probe-camera.sh",
+    "cert": "bash scripts/gen-cert.sh",
+    "cert:tailscale": "bash scripts/tailscale-cert.sh"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Flux stéréo — immersion VR</title>
+    <link rel="stylesheet" href="/style.css" />
+    <style>
+      #canvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+        touch-action: none;
+      }
+      .stage {
+        position: relative;
+        padding: 0;
+      }
+      #overlay {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        text-align: center;
+        padding: 20px;
+        pointer-events: none;
+      }
+      #overlay button,
+      #overlay select {
+        pointer-events: auto;
+      }
+      #overlay.hidden {
+        display: none;
+      }
+      #latencyBadge {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        font-variant-numeric: tabular-nums;
+        background: rgba(5, 8, 11, 0.7);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 6px 10px;
+        font-size: 12px;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Immersion VR — caméra stéréo</h1>
+      <nav>
+        <a href="/">Vue 2D</a>
+        <a href="/vr.html" class="active">Vue VR</a>
+      </nav>
+      <span class="spacer"></span>
+      <span id="status" class="pill warn">connexion…</span>
+    </header>
+
+    <main>
+      <div class="stage">
+        <canvas id="canvas"></canvas>
+        <div id="latencyBadge">– ms</div>
+        <div id="overlay">
+          <button id="enterVr" class="primary">Entrer en VR</button>
+          <div class="hint" id="overlayHint">
+            Ouvrez cette page dans le navigateur du casque Meta, puis appuyez sur « Entrer en VR ».
+          </div>
+        </div>
+      </div>
+
+      <aside>
+        <div class="card">
+          <h2>Latence</h2>
+          <dl class="stats">
+            <dt>Aller simple</dt>
+            <dd><span id="oneWay">–</span> ms</dd>
+            <dt>Aller-retour</dt>
+            <dd><span id="rtt">–</span> ms</dd>
+            <dt>Décodage + upload</dt>
+            <dd><span id="present">–</span> ms</dd>
+            <dt>Images/s</dt>
+            <dd><span id="fps">–</span></dd>
+            <dt>Images sautées</dt>
+            <dd><span id="dropped">0</span></dd>
+          </dl>
+        </div>
+
+        <div class="card">
+          <h2>Projection</h2>
+          <label class="field">
+            Géométrie
+            <select id="mode">
+              <option value="screen">Écran plan</option>
+              <option value="vr180">Dôme VR180 (180°)</option>
+            </select>
+          </label>
+          <label class="field">
+            Champ vertical <span id="vfovValue">60°</span>
+            <input id="vfov" type="range" min="30" max="110" step="5" value="60" />
+          </label>
+          <label class="field">
+            Distance <span id="distanceValue">2.0 m</span>
+            <input id="distance" type="range" min="0.5" max="6" step="0.1" value="2" />
+          </label>
+          <label class="field">
+            Stéréo
+            <select id="stereo">
+              <option value="sbs">Côte à côte (relief)</option>
+              <option value="mono">Mono (même image 2 yeux)</option>
+            </select>
+          </label>
+          <label class="field">
+            Inverser les yeux
+            <input id="swapEyes" type="checkbox" />
+          </label>
+          <div class="hint">
+            Si le relief paraît « rentré » / inversé, cochez cette case : l'ordre des
+            deux images dépend du fabricant de la caméra.
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Qualité du casque</h2>
+          <label class="field">
+            Échelle de rendu <span id="scaleValue">1.0</span>
+            <input id="scale" type="range" min="0.6" max="1.4" step="0.1" value="1" />
+          </label>
+          <div class="hint">
+            Baisser cette valeur réduit la charge GPU donc la latence d'affichage, au prix de la netteté.
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Journal</h2>
+          <div class="log" id="log"></div>
+        </div>
+      </aside>
+    </main>
+
+    <script type="module" src="/vr.js"></script>
+  </body>
+</html>

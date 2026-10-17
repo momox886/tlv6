@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Flux stéréo — vue 2D</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Flux stéréo faible latence</h1>
+      <nav>
+        <a href="/" class="active">Vue 2D</a>
+        <a href="/vr.html">Vue VR</a>
+      </nav>
+      <span class="spacer"></span>
+      <span id="status" class="pill warn">connexion…</span>
+    </header>
+
+    <main>
+      <div class="stage">
+        <canvas id="canvas" width="1280" height="480"></canvas>
+      </div>
+
+      <aside>
+        <div class="card">
+          <h2>Latence</h2>
+          <dl class="stats">
+            <dt>Aller simple (serveur→ici)</dt>
+            <dd><span id="oneWay">–</span> ms</dd>
+            <dt>Aller-retour réseau</dt>
+            <dd><span id="rtt">–</span> ms</dd>
+            <dt>Décodage + affichage</dt>
+            <dd><span id="present">–</span> ms</dd>
+            <dt>Images/s</dt>
+            <dd><span id="fps">–</span></dd>
+            <dt>Images sautées</dt>
+            <dd><span id="dropped">0</span></dd>
+            <dt>Erreurs de décodage</dt>
+            <dd><span id="errors">0</span></dd>
+          </dl>
+        </div>
+
+        <div class="card">
+          <h2>Affichage</h2>
+          <label class="field">
+            Œil
+            <select id="eye">
+              <option value="sbs">Côte à côte (SBS)</option>
+              <option value="left">Gauche</option>
+              <option value="right">Droite</option>
+              <option value="anaglyphe">Anaglyphe (rouge/cyan)</option>
+            </select>
+          </label>
+          <div class="row" style="margin-top: 10px">
+            <button id="resync">Redemander une image clé</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Flux</h2>
+          <dl class="stats">
+            <dt>Codec</dt>
+            <dd><span id="codec">–</span></dd>
+            <dt>Résolution</dt>
+            <dd><span id="size">–</span></dd>
+            <dt>Stéréo</dt>
+            <dd><span id="stereo">–</span></dd>
+          </dl>
+        </div>
+
+        <div class="card">
+          <h2>Journal</h2>
+          <div class="log" id="log"></div>
+        </div>
+      </aside>
+    </main>
+
+    <script type="module" src="/viewer.js"></script>
+  </body>
+</html>
