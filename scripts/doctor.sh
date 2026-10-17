@@ -13,13 +13,16 @@ ok()   { printf '  \033[32m✅\033[0m %s\n' "$1"; OK=$((OK+1)); }
 warn() { printf '  \033[33m⚠️ \033[0m %s\n' "$1"; WARN=$((WARN+1)); }
 bad()  { printf '  \033[31m❌\033[0m %s\n' "$1"; FAIL=$((FAIL+1)); }
 fix()  { printf '       \033[2m→ %s\033[0m\n' "$1"; }
+info() { printf '  %s\n' "$1"; }
 head_() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 
+IS_WSL=0
 head_ "Système"
 if [ -r /proc/sys/kernel/osrelease ]; then
   KERNEL="$(cat /proc/sys/kernel/osrelease)"
   echo "  noyau : $KERNEL"
   if echo "$KERNEL" | grep -qiE 'microsoft|wsl'; then
+    IS_WSL=1
     warn "environnement WSL2 détecté"
     fix "le NAT de WSL2 empêche le casque de joindre le serveur : voir README « Le casque ne se connecte pas »"
   else
@@ -72,19 +75,114 @@ if command -v ffmpeg >/dev/null 2>&1; then
   fi
 
   echo "  encodeurs H.264 disponibles :"
-  ENCS="$(grep -oE '\bh264_(vaapi|nvenc|qsv|amf)\b' <<<"$FFMPEG_ENCODERS" | sort -u | tr '\n' ' ')"
+  ENCS="$(grep -oE '\bh264_(vaapi|nvenc|qsv|amf|v4l2m2m)\b' <<<"$FFMPEG_ENCODERS" | sort -u | tr '\n' ' ')"
   if grep -q '\blibx264\b' <<<"$FFMPEG_ENCODERS"; then
     echo "    - libx264 (logiciel) — toujours présent, suffisant"
   else
     bad "libx264 absent : c'est l'encodeur de repli, il est indispensable"
     fix "sudo apt install ffmpeg"
   fi
-  if [ -n "$ENCS" ]; then
-    echo "    - $ENCS(matériel — peut réduire la charge CPU et la latence)"
-    fix "testez : ENCODER=h264_vaapi npm start (voir docs/LINUX.md)"
-  else
-    echo "    (aucun encodeur matériel : normal avec un ffmpeg statique ou un CPU sans iGPU)"
+  for e in $ENCS; do
+    case "$e" in
+      h264_vaapi)  echo "    - h264_vaapi   (iGPU Intel / AMD)";;
+      h264_nvenc)  echo "    - h264_nvenc   (GPU NVIDIA)";;
+      h264_qsv)    echo "    - h264_qsv     (iGPU Intel Quick Sync)";;
+      h264_amf)    echo "    - h264_amf     (GPU AMD, Windows)";;
+      h264_v4l2m2m) echo "    - h264_v4l2m2m (encodeur matériel ARM — voir la note plus bas)";;
+    esac
+  done
+  [ -n "$ENCS" ] || echo "    (aucun encodeur matériel détecté par ffmpeg)"
+
+  # --- Quel encodeur vous convient ? ---------------------------------------
+  # L'utilisateur n'a pas à connaître son matériel : on le détecte.
+  printf '  matériel détecté : '
+  GPU_CLASS="inconnu"
+  GPU_LABEL=""
+  if command -v lspci >/dev/null 2>&1; then
+    GPU_LINE="$(lspci -nn 2>/dev/null | grep -iE 'vga compatible|3d controller|display controller' | head -1 || true)"
+    [ -n "$GPU_LINE" ] && GPU_LABEL="${GPU_LINE#*: }"
   fi
+  if [ -z "$GPU_LABEL" ] && [ -d /sys/class/drm ]; then
+    for vf in /sys/class/drm/card*/device/vendor; do
+      [ -r "$vf" ] || continue
+      case "$(cat "$vf" 2>/dev/null)" in
+        0x10de) GPU_CLASS="nvidia"; GPU_LABEL="GPU NVIDIA";;
+        0x8086) GPU_CLASS="intel";  GPU_LABEL="iGPU Intel";;
+        0x1002|0x1022) GPU_CLASS="amd"; GPU_LABEL="GPU/iGPU AMD";;
+        0x14e4) GPU_CLASS="broadcom"; GPU_LABEL="Broadcom (Raspberry Pi ?)";;
+        *) continue;;
+      esac
+      break
+    done
+  fi
+  case "$GPU_CLASS" in
+    nvidia) GPU_CLASS="nvidia";;
+    intel)  GPU_CLASS="intel";;
+    amd)    GPU_CLASS="amd";;
+    broadcom) GPU_CLASS="broadcom";;
+    *) if [ -n "$GPU_LABEL" ]; then
+         case "$GPU_LABEL" in
+           *NVIDIA*) GPU_CLASS="nvidia";;
+           *Intel*)  GPU_CLASS="intel";;
+           *AMD*|*Radeon*|*ATI*) GPU_CLASS="amd";;
+         esac
+       fi;;
+  esac
+  if [ -n "$GPU_LABEL" ]; then echo "$GPU_LABEL"; else echo "aucun GPU identifié (ou lspci absent)"; fi
+
+  RENDER_NODES="$(ls /dev/dri/renderD* 2>/dev/null | tr '\n' ' ' || true)"
+  if [ -n "$RENDER_NODES" ] && [ "$IS_WSL" -eq 1 ]; then
+    # WSLg expose /dev/dri (GPU « paravirtuel »), mais il ne sert PAS à encoder :
+    # ffmpeg n'y trouve pas d'encodeur VAAPI exploitable. Ne pas envoyer
+    # l'utilisateur ajouter son compte au groupe « render » pour rien.
+    info "nœuds /dev/dri : $RENDER_NODES (fournis par WSLg — inutilisables pour l'encodage)"
+  elif [ -n "$RENDER_NODES" ]; then
+    info "nœuds de rendu : $RENDER_NODES"
+    RENDER_OK=0
+    for node in $RENDER_NODES; do [ -r "$node" ] && RENDER_OK=1; done
+    if [ "$RENDER_OK" -eq 1 ]; then
+      ok "un nœud /dev/dri est accessible en lecture"
+    else
+      warn "nœuds /dev/dri présents mais non accessibles par $(id -un)"
+      fix "sudo usermod -aG render $(id -un)  puis reconnectez-vous"
+    fi
+  else
+    info "aucun nœud /dev/dri (normal sans iGPU, sans GPU, ou depuis WSL2)"
+  fi
+
+  # Recommandation : uniquement parmi les encodeurs que le code gère
+  # EXPLICITEMENT (les autres retombent silencieusement sur libx264).
+  RECO="libx264"
+  RECO_WHY="encodeur logiciel, fonctionne partout"
+  if [ "$GPU_CLASS" = "nvidia" ] && grep -q '\bh264_nvenc\b' <<<"$FFMPEG_ENCODERS"; then
+    RECO="h264_nvenc"; RECO_WHY="GPU NVIDIA détecté"
+  elif { [ "$GPU_CLASS" = "intel" ] || [ "$GPU_CLASS" = "amd" ]; } \
+       && [ "${RENDER_OK:-0}" -eq 1 ] && grep -q '\bh264_vaapi\b' <<<"$FFMPEG_ENCODERS"; then
+    RECO="h264_vaapi"; RECO_WHY="iGPU $GPU_CLASS détecté avec /dev/dri accessible"
+  elif [ "$GPU_CLASS" = "intel" ] && grep -q '\bh264_qsv\b' <<<"$FFMPEG_ENCODERS"; then
+    RECO="h264_qsv"; RECO_WHY="iGPU Intel détecté (Quick Sync)"
+  fi
+
+  printf '  → encodeur recommandé : '
+  printf '\033[1m%s\033[0m  (%s)\n' "$RECO" "$RECO_WHY"
+  if [ "$RECO" = "libx264" ]; then
+    fix "rien à faire : c'est déjà la valeur par défaut. Mesurez d'abord la latence"
+    fix "sur http://<PC>:8080/ — si le CPU souffre, cherchez un encodeur matériel."
+  else
+    fix "essayez : ENCODER=$RECO npm start"
+    fix "comparez la latence affichée par la page 2D avec celle de libx264"
+  fi
+
+  # La note v4l2m2m ne concerne que les machines ARM : sur x86, cet encodeur est
+  # compilé « au cas où » mais n'a aucun matériel derrière.
+  ARCH="$(uname -m 2>/dev/null || echo inconnu)"
+  if grep -q '\bh264_v4l2m2m\b' <<<"$FFMPEG_ENCODERS" \
+     && { [ "$GPU_CLASS" = "broadcom" ] || grep -qE '^(aarch64|armv7l|armv6l)$' <<<"$ARCH"; }; then
+    warn "h264_v4l2m2m est disponible ($ARCH) mais N'EST PAS géré par ce projet :"
+    fix "il retomberait sur l'encodage logiciel. De plus ces encodeurs ARM sont"
+    fix "limités en résolution (souvent 1920 px de large, < 2560 px de ce flux)."
+  fi
+
 else
   bad "ffmpeg introuvable"
   fix "sudo apt install ffmpeg"

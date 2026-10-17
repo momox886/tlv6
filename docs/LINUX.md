@@ -154,6 +154,16 @@ la latence.
 | `h264_nvenc` | GPU NVIDIA | `ENCODER=h264_nvenc` |
 | `h264_qsv` | iGPU Intel (Quick Sync) | `ENCODER=h264_qsv` |
 
+> 💡 **Vous ne savez pas lequel choisir ?** C'est le cas normal. Lancez
+> `npm run doctor` : il détecte votre GPU et affiche **la commande exacte** à
+> utiliser. Le défaut (`libx264`) convient de toute façon à la plupart des
+> machines — vous n'êtes pas obligé d'y toucher.
+
+> ⚠️ **N'inventez pas un nom d'encodeur.** Tout nom non géré par ce projet
+> retombe sur `libx264` (logiciel). Ce n'est plus silencieux : le serveur affiche
+> un avertissement explicite au démarrage, et donne la liste des encodeurs
+> valides. En cas de doute, `npm run doctor`.
+
 Quels encodeurs votre ffmpeg propose-t-il ?
 
 ```bash

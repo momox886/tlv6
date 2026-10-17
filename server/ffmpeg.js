@@ -61,6 +61,18 @@ function inputArgs(cfg) {
   }
 }
 
+// Encodeurs réellement gérés par encoderArgs() ci-dessous.
+//
+// Tout autre nom retombe sur le `default` (arguments libx264) : le flux
+// fonctionne, mais en LOGICIEL. C'est le piège classique quand on choisit un
+// encodeur « au hasard » (ex. h264_v4l2m2m sur un Raspberry Pi) : on croit
+// utiliser le matériel et on ne le sait jamais. On prévient donc explicitement.
+const SUPPORTED_ENCODERS = new Set([
+  'libx264', 'h264_nvenc', 'h264_qsv', 'h264_amf', 'h264_vaapi',
+]);
+
+let warnedUnknownEncoder = false;
+
 function encoderArgs(cfg) {
   const { encoder, bitrate, bufsize, gop } = cfg;
   switch (encoder) {
@@ -120,6 +132,16 @@ function encoderArgs(cfg) {
 
 /** Construit le tableau d'arguments passé à `spawn(ffmpeg, args)`. */
 export function buildFfmpegArgs(cfg) {
+  if (!SUPPORTED_ENCODERS.has(cfg.encoder) && !warnedUnknownEncoder) {
+    warnedUnknownEncoder = true; // une seule fois, même si ffmpeg redémarre
+    console.warn(
+      `[ffmpeg] ENCODER="${cfg.encoder}" n'est pas géré par ce projet : repli sur ` +
+      `libx264 (encodage LOGICIEL).\n` +
+      `         Encodeurs valides : ${[...SUPPORTED_ENCODERS].join(', ')}\n` +
+      `         Pour connaître celui adapté à cette machine : npm run doctor`
+    );
+  }
+
   const args = ['-hide_banner', '-loglevel', 'warning'];
 
   // VAAPI doit être déclaré avant les entrées.
