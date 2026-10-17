@@ -132,6 +132,7 @@ wss.on('error', onListenError);
 // écran noir dans le navigateur ne laisse AUCUNE trace côté serveur, et il devient
 // impossible de savoir si le problème vient de ffmpeg ou du navigateur.
 let loggedCodec = null;
+let loggedGeometry = null;
 const capture = startCapture(config, {
   onCodec: (codec) => {
     if (codec !== loggedCodec) {
@@ -140,6 +141,33 @@ const capture = startCapture(config, {
     }
     hub.setCodec(codec);
   },
+
+  // Les dimensions RÉELLES, lues dans le SPS. Le serveur ne doit jamais annoncer
+  // au navigateur la taille de `.env` : si la caméra a négocié autre chose, une
+  // config incohérente (niveau H.264 trop bas pour la taille annoncée) fait
+  // échouer `isConfigSupported` -> « Codec non supporté ».
+  onGeometry: (width, height) => {
+    if (width === loggedGeometry?.width && height === loggedGeometry?.height) return;
+    loggedGeometry = { width, height };
+    console.log(`[flux] dimensions réelles du flux : ${width}×${height}`);
+    if (width !== config.width || height !== config.height) {
+      console.warn(
+        `[flux] ⚠ la caméra ne délivre PAS la taille demandée (${config.width}×${config.height}).`,
+      );
+      console.warn(
+        '[flux]   Corrigez WIDTH/HEIGHT dans .env avec les valeurs ci-dessus ' +
+          '(elles viennent de la caméra elle-même).',
+      );
+      if (config.width === width * 2) {
+        console.warn(
+          '[flux]   Indice : la largeur annoncée vaut le DOUBLE de la réelle — ' +
+            'la caméra fournit probablement DEUX images distinctes au lieu d\'une seule en côte à côte.',
+        );
+      }
+    }
+    hub.setGeometry({ width, height, fps: config.fps });
+  },
+
   onAccessUnit: (au, isKey) => {
     if (hub.stats.frames === 0) {
       console.log(`[flux] première image encodée reçue (${au.length} octets) — le flux est vivant.`);

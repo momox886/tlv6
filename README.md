@@ -317,11 +317,12 @@ Ensuite, dans le navigateur :
 npm test
 ```
 
-Quatre vérifications, sans caméra (elles utilisent la source synthétique) :
+Cinq vérifications, sans caméra (elles utilisent la source synthétique) :
 
 | Test | Ce qu'il valide |
 |---|---|
 | `test/annexb.test.mjs` | découpage H.264 → images, détection des images clés et du codec |
+| `test/sps.test.mjs` | lecture des dimensions **réelles** dans le SPS (dont le recadrage 1080p) |
 | `test/integration.test.mjs` | démarre le serveur, se connecte en WebSocket, valide tout le protocole |
 | `test/tls.test.mjs` | HTTPS + WSS de bout en bout (le « contexte sécurisé » exigé par WebXR) |
 | `test/math.test.mjs` | matrices de projection (une erreur = image invisible dans le casque) |
@@ -359,6 +360,7 @@ stereo-vr-stream/
 │   └── dshow-list.ps1      # plan B : caméra lue sous Windows
 ├── test/
 │   ├── annexb.test.mjs       # découpage H.264
+│   ├── sps.test.mjs          # dimensions réelles lues dans le SPS
 │   ├── integration.test.mjs  # serveur + client WebSocket de bout en bout
 │   ├── tls.test.mjs          # HTTPS + WSS (contexte sécurisé WebXR)
 │   └── math.test.mjs         # matrices de projection
@@ -397,4 +399,10 @@ voir [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#améliorer-le-rendu-3d).
 - Le relief brut (sans calibration) est correct mais pas parfait : les deux objectifs
   ne sont jamais parfaitement alignés.
 - WebCodecs est requis : tout navigateur Chromium récent fait l'affaire (le
-  navigateur du Quest, oui).
+  navigateur du Quest, oui). **Attention au H.264** : certains paquets `chromium`
+  sont livrés *sans* décodeur H.264 (c'est le cas du *snap* d'Ubuntu, pour des
+  raisons de licence) et répondent alors `Codec non supporté`. Utilisez **Google
+  Chrome** ou **Firefox** sur ces machines.
+- Le serveur annonce la taille **réelle** du flux (lue dans le SPS), pas celle de
+  `.env`. Si la caméra négocie un autre mode, le journal le signale — utile pour
+  repérer un mode vidéo qui n'est pas celui attendu.

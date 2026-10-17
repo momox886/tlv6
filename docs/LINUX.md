@@ -314,8 +314,8 @@ budget de `docs/LATENCY.md` s'applique tel quel, moins ces surcoûts.
 npm test
 ```
 
-Quatre suites, sans caméra : découpage H.264, protocole WebSocket de bout en
-bout, TLS/WSS, et matrices de projection.
+Cinq suites, sans caméra : découpage H.264, dimensions réelles du SPS, protocole
+WebSocket de bout en bout, TLS/WSS, et matrices de projection.
 
 > Les tests utilisent le client WebSocket de Node, disponible **nativement à
 > partir de Node 22**. Avec Node 20, le serveur fonctionne normalement mais
@@ -332,9 +332,24 @@ bout, TLS/WSS, et matrices de projection.
 | `Device or resource busy` | un autre logiciel (navigateur, Cheese, OBS…) occupe la caméra | fermez-le, puis relancez |
 | Environ 5 im/s seulement | la caméra est en `YUYV` | `INPUT_FORMAT=mjpeg` dans `.env` |
 | `Invalid argument` au démarrage de ffmpeg | résolution/fréquence non supportées | relevez les vraies valeurs avec `npm run probe` |
+| Journal : `dimensions réelles du flux : …` ≠ `.env` | la caméra ne délivre pas la taille demandée | recopiez les valeurs du journal dans `WIDTH`/`HEIGHT`, ou choisissez un mode réellement proposé (`npm run probe`) |
+| `Codec non supporté : avc1.…` | décodeur H.264 absent du navigateur | utilisez **Google Chrome** ou **Firefox** : certains paquets `chromium` (dont le *snap* d'Ubuntu) sont livrés **sans H.264**, pour des raisons de licence |
 | L'image reste figée dans le casque | paquet perdu | bouton « Redemander une image clé » |
 | WebXR indisponible / bouton absent | origine non sécurisée | passez en HTTPS (§7) |
 | Le casque ne joint pas le serveur | pare-feu | §8 |
+
+> **Le serveur lit-il vraiment ma caméra ?** Depuis peu, le serveur extrait la
+> taille **réelle** de l'image du SPS H.264 et l'annonce au navigateur — il ne se
+> contente plus de répéter `WIDTH`/`HEIGHT`. Si les deux diffèrent, il le dit :
+>
+> ```
+> [flux] codec H.264 détecté : avc1.42c01f
+> [flux] dimensions réelles du flux : 1280×720
+> [flux] ⚠ la caméra ne délivre PAS la taille demandée (2560×720).
+> ```
+>
+> C'est un message utile, pas une erreur : il signifie que le mode vidéo choisi
+> n'est pas celui que vous croyez.
 
 ---
 

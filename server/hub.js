@@ -39,9 +39,15 @@ export class Hub {
   }
 
   setGeometry({ width, height, fps }) {
-    this.width = width || this.width;
-    this.height = height || this.height;
-    this.fps = fps || this.fps;
+    const nextWidth = width || this.width;
+    const nextHeight = height || this.height;
+    const nextFps = fps || this.fps;
+    // Ne rediffuser que si quelque chose change vraiment : sinon chaque image
+    // clé renverrait un « hello » et ferait reconfigurer le décodeur du client.
+    if (nextWidth === this.width && nextHeight === this.height && nextFps === this.fps) return;
+    this.width = nextWidth;
+    this.height = nextHeight;
+    this.fps = nextFps;
     this.#broadcastControl();
   }
 

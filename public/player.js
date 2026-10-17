@@ -8,6 +8,64 @@
 
 const HEADER_BYTES = 16;
 
+const AVC_RE = /^avc1\.([0-9a-f]{2})[0-9a-f]{2}([0-9a-f]{2})$/i;
+
+/**
+ * Chaînes de codec à essayer, de la plus fidèle à la plus permissive.
+ *
+ * Le niveau (`level_idc`) déclaré dans le SPS est parfois trop BAS pour la
+ * résolution réelle du flux (encodeur logiciel, caméra approximative). Le
+ * navigateur refuse alors de configurer le décodeur et on lit « Codec non
+ * supporté » alors que le H.264 est parfaitement lisible. On réessaie donc en
+ * annonçant un niveau plus élevé.
+ */
+function codecCandidates(codec) {
+  const out = [];
+  if (codec) out.push(codec);
+  const m = codec ? AVC_RE.exec(codec) : null;
+  if (m) {
+    const profile = m[1];
+    for (const level of ['28', '33', '34']) out.push(`avc1.${profile}00${level}`);
+    out.push('avc1.4d0028'); // profil Main
+    out.push('avc1.640028'); // profil High
+  }
+  out.push('avc1.42E01E'); // Baseline 3.1 : la combinaison la plus universelle
+  return [...new Set(out)];
+}
+
+/** Configurations complètes à tester, dans l'ordre de préférence. */
+function attemptConfigs(hello) {
+  const hasDims = Boolean(hello.width && hello.height);
+  const out = [];
+  const seen = new Set();
+  const push = (cfg) => {
+    const key = JSON.stringify(cfg);
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push(cfg);
+    }
+  };
+
+  for (const codec of codecCandidates(hello.codec)) {
+    const base = { codec, optimizeForLatency: true };
+    if (hasDims) {
+      push({
+        ...base,
+        codedWidth: hello.width,
+        codedHeight: hello.height,
+        avc: { format: 'annexb' },
+        hardwareAcceleration: 'prefer-hardware',
+      });
+      push({ ...base, codedWidth: hello.width, codedHeight: hello.height, avc: { format: 'annexb' } });
+    }
+    // Sans dimensions : le SPS les porte déjà. C'est le plus tolérant, et cela
+    // évite qu'un désaccord sur la taille fasse échouer la configuration.
+    push({ ...base, avc: { format: 'annexb' } });
+    push({ ...base });
+  }
+  return out;
+}
+
 export class LowLatencyPlayer extends EventTarget {
   constructor(url, options = {}) {
     super();
@@ -16,6 +74,8 @@ export class LowLatencyPlayer extends EventTarget {
 
     this.info = null;         // métadonnées envoyées par le serveur
     this.decoder = null;
+    this._codecString = null; // codec actuellement configuré
+    this._dims = null;        // dimensions de la configuration courante
 
     this.framesDecoded = 0;
     this.framesDropped = 0;
@@ -151,12 +211,26 @@ export class LowLatencyPlayer extends EventTarget {
     // Une reconfiguration implique un nouveau flux : on repart sur une image clé.
     this.info = hello;
     if (!hello.codec) return;
-    // Déjà configuré sur ce codec : ne rien casser.
-    if (this._codecString === hello.codec && this.decoder?.state === 'configured') {
+
+    // Les dimensions font partie de l'identité de la configuration : si le
+    // serveur a corrigé la taille réelle du flux entre-temps, il faut bel et bien
+    // reconfigurer (sinon on garderait un décodeur réglé sur une taille fausse,
+    // ce qui coupe l'image en deux de travers).
+    const dims = hello.width && hello.height ? `${hello.width}x${hello.height}` : '?';
+    if (
+      this._codecString === hello.codec &&
+      this._dims === dims &&
+      this.decoder?.state === 'configured'
+    ) {
       this.dispatchEvent(new CustomEvent('configured', { detail: hello }));
       return;
     }
+
+    // On note l'identité AVANT les `await` : si un second « hello » arrive
+    // pendant que celui-ci est encore en cours de validation, il repartira
+    // aussitôt au lieu de configurer un second décodeur en parallèle.
     this._codecString = hello.codec;
+    this._dims = dims;
 
     try {
       this.decoder?.close();
@@ -164,24 +238,31 @@ export class LowLatencyPlayer extends EventTarget {
       /* ignore */
     }
 
-    const config = {
-      codec: hello.codec,
-      codedWidth: hello.width,
-      codedHeight: hello.height,
-      hardwareAcceleration: 'prefer-hardware',
-      optimizeForLatency: true,
-      // Mode « annexb » : on fournit les SPS/PPS dans le flux, sans `description`.
-      avc: { format: 'annexb' },
-    };
-
-    const support = await VideoDecoder.isConfigSupported(config);
-    if (!support.supported) {
-      delete config.avc; // certains navigateurs se passent du champ avc
-      const retry = await VideoDecoder.isConfigSupported(config);
-      if (!retry.supported) {
-        this.dispatchEvent(new CustomEvent('fatal', { detail: `Codec non supporté : ${hello.codec}` }));
-        return;
+    // On ne mise pas tout sur une seule chaîne de codec : on essaie une série de
+    // configurations de la plus fidèle à la plus permissive. C'est ce qui évite
+    // le « Codec non supporté » quand le niveau déclaré ne colle pas à la taille.
+    let chosen = null;
+    const tried = [];
+    for (const config of attemptConfigs(hello)) {
+      tried.push(config.codec + (config.avc ? ' [annexb]' : ''));
+      let supported = false;
+      try {
+        supported = (await VideoDecoder.isConfigSupported(config)).supported;
+      } catch {
+        supported = false; // configuration rejetée : on passe à la suivante
       }
+      if (supported) {
+        chosen = config;
+        break;
+      }
+    }
+
+    if (!chosen) {
+      this._codecString = null;
+      this._dims = null;
+      this.dispatchEvent(new CustomEvent('fatal', { detail: `Codec non supporté : ${hello.codec}` }));
+      this.dispatchEvent(new CustomEvent('unsupported', { detail: { codec: hello.codec, tried } }));
+      return;
     }
 
     this.decoder = new VideoDecoder({
@@ -192,7 +273,7 @@ export class LowLatencyPlayer extends EventTarget {
         this.requestKeyframe();
       },
     });
-    this.decoder.configure(config);
+    this.decoder.configure(chosen);
     this.requestKeyframe();
     this.dispatchEvent(new CustomEvent('configured', { detail: hello }));
   }

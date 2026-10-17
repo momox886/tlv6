@@ -5,15 +5,16 @@ import { spawn } from 'node:child_process';
 import { buildFfmpegArgs } from './ffmpeg.js';
 import { AnnexBSplitter, scanAccessUnit } from './annexb.js';
 
-export function startCapture(cfg, { onAccessUnit, onCodec, log = console } = {}) {
+export function startCapture(cfg, { onAccessUnit, onCodec, onGeometry, log = console } = {}) {
   let proc = null;
   let stopped = false;
   let restartDelay = 500;
   let permissionHinted = false;
 
   const splitter = new AnnexBSplitter((au) => {
-    const { isKey, codec } = scanAccessUnit(au);
+    const { isKey, codec, width, height } = scanAccessUnit(au);
     if (codec) onCodec(codec);
+    if (width && height) onGeometry?.(width, height);
     onAccessUnit(au, isKey);
   });
 

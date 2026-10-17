@@ -119,6 +119,18 @@ player.addEventListener('fatal', (e) => {
   setStatus('erreur', 'bad');
   log('Fatal : ' + e.detail);
 });
+
+// Toutes les variantes de codec ont été refusées : on oriente vers la cause la
+// plus fréquente sur Linux, qui n'a rien à voir avec le flux lui-même.
+player.addEventListener('unsupported', (e) => {
+  log(
+    `${e.detail.tried.length} configurations refusées par ce navigateur. ` +
+      "S'il refuse TOUT le H.264 (et pas seulement une variante), c'est que ce " +
+      "navigateur n'embarque pas de décodeur H.264 : les paquets « Chromium » de " +
+      "certaines distributions — dont le snap d'Ubuntu — en sont dépourvus pour des " +
+      'raisons de licence. Essayez Google Chrome ou Firefox.',
+  );
+});
 player.addEventListener('drop', () => {
   /* comptabilisé dans le tableau de bord */
 });
