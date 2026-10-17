@@ -9,8 +9,9 @@
   },
   "scripts": {
     "start": "node server/index.js",
+    "start:tailscale": "PROFILE=tailscale node server/index.js",
     "test-source": "SOURCE=test node server/index.js",
-    "test": "node test/annexb.test.mjs && node test/sps.test.mjs && node test/integration.test.mjs && node test/tls.test.mjs && node test/math.test.mjs",
+    "test": "node test/annexb.test.mjs && node test/sps.test.mjs && node test/profile.test.mjs && node test/network.test.mjs && node test/integration.test.mjs && node test/tls.test.mjs && node test/math.test.mjs",
     "doctor": "bash scripts/doctor.sh",
     "probe": "bash scripts/probe-camera.sh",
     "cert": "bash scripts/gen-cert.sh",

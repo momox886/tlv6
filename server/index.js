@@ -17,6 +17,7 @@ import { WebSocketServer } from 'ws';
 import { config } from './config.js';
 import { startCapture } from './capture.js';
 import { Hub } from './hub.js';
+import { isTailscaleAddress } from './network.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
@@ -52,6 +53,8 @@ function serveStatic(req, res) {
           fps: hub.fps,
           stereo: hub.stereo,
           source: config.source,
+          profile: config.profile,
+          bitrate: config.bitrate,
           frames: hub.stats.frames,
           dropped: hub.stats.dropped,
           bitrateMbps: +(((hub.stats.bytes * 8) / uptime) / 1e6).toFixed(2),
@@ -98,6 +101,7 @@ function createServer() {
       console.error(`[tls] chemins essayés : ${config.tlsCert} et ${config.tlsKey}`);
       console.error('[tls] certificat approuvé par le casque (Tailscale) : bash scripts/tailscale-cert.sh');
       console.error('[tls] certificat auto-signé (avertissement à accepter) : bash scripts/gen-cert.sh');
+      console.error('[tls] Sur Tailscale, pour moins de latence en cas de trafic relayé : npm run start:tailscale');
       console.error('[tls] ou lancez sans TLS (TLS=0).');
       process.exit(1);
     }
@@ -110,7 +114,27 @@ hub.setGeometry({ width: config.width, height: config.height, fps: config.fps })
 
 const server = createServer();
 const wss = new WebSocketServer({ server, path: '/ws' });
-wss.on('connection', (ws) => hub.add(ws));
+
+// Un client qui arrive par Tailscale mérite un avertissement : le débit utile
+// peut y être bien plus faible qu'en réseau local, surtout si le trafic est
+// relayé (DERP). On le signale sans rien imposer.
+let tailscaleHinted = false;
+function hintTailscale(req) {
+  if (tailscaleHinted || config.profile === 'tailscale') return;
+  if (!isTailscaleAddress(req?.socket?.remoteAddress)) return;
+  tailscaleHinted = true;
+  console.log('');
+  console.log(`[réseau] un client arrive par Tailscale (${req.socket.remoteAddress}).`);
+  console.log("[réseau] Le débit utile peut y être plus faible qu'en local, surtout si");
+  console.log('[réseau] le trafic est relayé. Pour réduire la charge et la latence :');
+  console.log('[réseau]   PROFILE=tailscale npm start');
+  console.log('');
+}
+
+wss.on('connection', (ws, req) => {
+  hintTailscale(req);
+  hub.add(ws);
+});
 
 // Erreur de port déjà pris : cas très courant (un « npm start » précédent encore
 // actif). Le message brut de Node est une pile d'appels illisible ; on explique.
@@ -236,6 +260,7 @@ server.listen(config.port, config.host, () => {
   console.log('  ─────────────────────────────────────────────');
   console.log(`  Source    : ${config.source}  ${config.source === 'v4l2' ? config.device : ''}`.trimEnd());
   console.log(`  Encodage  : ${config.encoder}  ${config.width}x${config.height}@${config.fps}  ${config.bitrate}`);
+  console.log(`  Profil    : ${config.profile} — ${config.profileDescription}`);
   console.log('');
   console.log(`  Vue 2D    : ${scheme}://localhost:${config.port}/`);
   console.log(`  Vue VR    : ${scheme}://localhost:${config.port}/vr.html`);

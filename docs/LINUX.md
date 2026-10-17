@@ -218,10 +218,19 @@ d'administration Tailscale, puis :
 
 ```bash
 npm run cert:tailscale        # récupère le certificat dans certs/
-TLS=1 npm start
+npm run start:tailscale       # profil optimisé quand le trafic passe par Tailscale
+# ou : PROFILE=tailscale npm start
 ```
 
 Sur le casque : `https://<nom-machine>.<votre-tailnet>.ts.net/vr.html`
+
+> **Tailscale et la latence.** Si le casque et le PC sont sur le même Wi-Fi,
+> Tailscale établit généralement une connexion directe (paire-à-paire). Si le
+> NAT empêche cette connexion, le trafic transite par un *DERP* (relayé) — le
+> débit utile chute et la file d'attente s'empile. Dans ce cas, le profil
+> `tailscale` (débit réduit + seuil de tampon resserré) évite l'explosion de
+> latence. `npm run doctor` et l'avertissement au démarrage vous le rappelleront
+> si des clients arrivent par Tailscale.
 
 Le script `scripts/tailscale-cert.sh` détecte automatiquement le binaire natif.
 Guide détaillé : **[HTTPS-TAILSCALE.md](HTTPS-TAILSCALE.md)**.

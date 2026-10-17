@@ -16,6 +16,12 @@ import { fileURLToPath } from 'node:url';
  * présentes dans l'environnement ne sont JAMAIS écrasées, pour que
  * `SOURCE=test npm start` reste prioritaire sur le fichier.
  */
+// Variables présentes dans l'environnement du SHELL, relevées AVANT la lecture de
+// `.env`. Elles doivent toujours gagner — y compris sur le profil de qualité
+// (voir PROFILES ci-dessous) : un réglage tapé sur la ligne de commande est une
+// intention explicite et immédiate.
+const SHELL_ENV = new Set(Object.keys(process.env));
+
 function loadDotEnv() {
   const file = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '.env');
   if (!fs.existsSync(file)) return;
@@ -52,7 +58,68 @@ function num(value, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+// ---------------------------------------------------------------------------
+// Profils de qualité
+//
+// Traverser Tailscale change la nature du lien : quand le trafic est relayé (par
+// un DERP) ou passe par un lien faible, 12 Mbit/s ne « passent » pas. Or le
+// transport est en TCP : l'excédent ne se perd pas, il s'empile — et la latence
+// explose. Réduire le débit est donc LE levier principal, et il améliore à la
+// fois la latence et la fluidité (moins d'images jetées).
+//
+// Priorité des réglages, du plus fort au plus faible :
+//   1. variable d'environnement du shell   BITRATE=2M npm start
+//   2. profil de qualité                   PROFILE=tailscale
+//   3. fichier `.env`
+//   4. valeur par défaut du code
+//
+// Le profil passe donc AVANT `.env` : c'est ce qui lui permet de corriger des
+// valeurs déjà écrites dans le fichier. Le shell reste maître pour affiner.
+// ---------------------------------------------------------------------------
+const PROFILES = {
+  lan: {
+    description: "réseau local — le débit n'est pas la contrainte",
+  },
+  tailscale: {
+    description: "flux tunnelisé — débit réduit pour éviter la file d'attente",
+    // Les clés sont les mêmes que celles de l'environnement : on voit d'un coup
+    // d'œil exactement quels réglages le profil remplace.
+    //
+    // 4 Mbit/s : tient sur un lien relayé, largement assez en connexion directe.
+    // Pour affiner : BITRATE=2M PROFILE=tailscale npm start
+    BITRATE: '4M',
+    // Images clés un peu plus espacées : elles coûtent cher en débit. Sans danger
+    // ici, le WebSocket étant en TCP (pas de perte, donc pas d'artefacts).
+    GOP: 45,
+    // 250 ko ≈ 0,5 s de file à 4 Mbit/s. Le hub préfère JETER une image
+    // différentielle que de laisser cette file grandir : la latence prime.
+    MAX_BUFFERED: 250_000,
+  },
+};
+
+const profileName = (process.env.PROFILE ?? 'lan').toLowerCase();
+const profile = PROFILES[profileName];
+
+if (!profile) {
+  console.warn(
+    `[config] PROFILE="${profileName}" est inconnu : profil « lan » appliqué.\n` +
+      `         Profils valides : ${Object.keys(PROFILES).join(', ')}`,
+  );
+}
+
+/** Résout un réglage : shell > profil > .env > défaut du code. */
+function pick(key, fallback) {
+  if (SHELL_ENV.has(key)) return process.env[key];
+  const fromProfile = profile?.[key];
+  if (fromProfile !== undefined) return String(fromProfile);
+  return process.env[key] ?? fallback;
+}
+
 export const config = {
+  // ---------- Profil de qualité ----------
+  profile: profile ? profileName : 'lan',
+  profileDescription: (profile ?? PROFILES.lan).description,
+
   // ---------- Serveur HTTP/WS ----------
   host: process.env.HOST ?? '0.0.0.0',
   port: num(process.env.PORT, 8080),
@@ -80,12 +147,12 @@ export const config = {
   // Preset x264 : ultrafast = latence minimale ; superfast/veryfast = meilleure
   // qualité (déblocage + CABAC activés) pour quelques ms de plus.
   preset: process.env.PRESET ?? 'ultrafast',
-  bitrate: process.env.BITRATE ?? '12M',
+  bitrate: pick('BITRATE', '12M'),
   bufsize: process.env.BUFSIZE ?? '1M',
-  gop: num(process.env.GOP, 30),
+  gop: num(pick('GOP'), 30),
   vaapiDevice: process.env.VAAPI_DEVICE ?? '/dev/dri/renderD128',
 
   // ---------- Divers ----------
   stereo: (process.env.STEREO ?? 'sbs').toLowerCase(), // sbs | mono
-  maxBufferedBytes: num(process.env.MAX_BUFFERED, 2_000_000),
+  maxBufferedBytes: num(pick('MAX_BUFFERED'), 2_000_000),
 };
