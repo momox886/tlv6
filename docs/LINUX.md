@@ -233,6 +233,23 @@ npm run cert                  # certificat auto-signé (avertissement à accepte
 TLS=1 npm start
 ```
 
+Le certificat auto-signé produit couvre `localhost`, `127.0.0.1`, `::1`, le nom
+de la machine (`.local` compris) et toutes les adresses IPv4 locales. Ouvrez donc
+`https://localhost:8080/` sur la machine elle-même, et acceptez l'avertissement
+sur le casque.
+
+> **Le piège du certificat auto-signé** : il est figé sur les adresses présentes
+> au moment de sa création. Si la machine change d'adresse IP, le navigateur
+> **refuse** la connexion (ce n'est plus un simple avertissement). Régénérez-le
+> avec `npm run cert` — et laissez `npm run doctor` vous prévenir : il vérifie que
+> le certificat couvre bien les adresses actuelles et que la clé correspond.
+
+Pour un HTTPS **sans aucun avertissement** en local, il faut une autorité
+installée dans le magasin de confiance du système et du navigateur : l'outil
+[`mkcert`](https://github.com/FiloSottile/mkcert) le fait très bien
+(`mkcert -install` puis `mkcert localhost <ip>`), mais il faut l'installer aussi
+sur le casque, ce qui n'est pas toujours possible. Tailscale reste plus simple.
+
 ou, en dépannage, autoriser l'origine en clair dans Chrome :
 `chrome://flags/#unsafely-treat-insecure-origin-as-secure`.
 

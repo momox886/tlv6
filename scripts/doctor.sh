@@ -237,6 +237,93 @@ else
   fix "cp .env.example .env  puis ajustez WIDTH/HEIGHT/DEVICE"
 fi
 
+head_ "HTTPS (certificat)"
+
+TLS_ON=0
+if [ -f .env ] && grep -qE '^TLS=(1|true)$' .env; then TLS_ON=1; fi
+
+if ! command -v openssl >/dev/null 2>&1; then
+  warn "openssl absent : impossible de vérifier le certificat"
+  fix "sudo apt install openssl"
+elif [ ! -f certs/cert.pem ]; then
+  if [ "$TLS_ON" -eq 1 ]; then
+    bad "TLS=1 dans .env mais certs/cert.pem est absent : le serveur refusera de démarrer"
+    fix "générez un certificat auto-signé : npm run cert"
+  else
+    info "aucun certificat (normal tant que TLS=0)"
+    fix "pour servir en HTTPS local : npm run cert  puis TLS=1 dans .env"
+  fi
+else
+  ok "certificat présent : certs/cert.pem"
+
+  # La clé privée doit correspondre au certificat, sinon TLS ne démarre pas.
+  # On compare les clés PUBLIQUES (indépendant de l'algorithme, RSA ou ECDSA).
+  CERT_PUB="$(openssl x509 -in certs/cert.pem -noout -pubkey 2>/dev/null | openssl sha256 2>/dev/null || true)"
+  KEY_PUB="$(openssl pkey -in certs/key.pem -pubout 2>/dev/null | openssl sha256 2>/dev/null || true)"
+  if [ -f certs/key.pem ] && [ -n "$CERT_PUB" ] && [ "$CERT_PUB" = "$KEY_PUB" ]; then
+    ok "certs/key.pem correspond bien au certificat"
+  else
+    bad "certs/key.pem manquant, ou ne correspond pas au certificat"
+    fix "régénérez la paire : npm run cert"
+  fi
+
+  SAN="$(openssl x509 -in certs/cert.pem -noout -ext subjectAltName 2>/dev/null | tail -n +2 || true)"
+
+  # Expiration : un certificat périmé provoque un refus, pas seulement un avertissement.
+  END="$(openssl x509 -in certs/cert.pem -noout -enddate 2>/dev/null | cut -d= -f2 || true)"
+  if [ -n "$END" ]; then
+    END_TS="$(date -d "$END" +%s 2>/dev/null || echo 0)"
+    DAYS_LEFT=$(( (END_TS - $(date +%s)) / 86400 ))
+    if [ "$DAYS_LEFT" -lt 0 ]; then
+      bad "le certificat a EXPIRÉ (le $END)"
+      fix "régénérez-le : npm run cert"
+    elif [ "$DAYS_LEFT" -lt 30 ]; then
+      warn "le certificat expire dans $DAYS_LEFT jour(s)"
+      fix "régénérez-le : npm run cert"
+    else
+      ok "valide encore $DAYS_LEFT jours"
+    fi
+  fi
+
+  # Couverture : le navigateur REFUSE une origine absente du subjectAltName.
+  # C'est le piège classique du certificat auto-signé : l'adresse IP change
+  # (bail DHCP, autre réseau) et le certificat ne couvre plus rien.
+  if grep -q 'DNS:localhost' <<<"$SAN" && grep -q '127\.0\.0\.1' <<<"$SAN"; then
+    ok "couvre https://localhost"
+  else
+    warn "ne couvre pas « localhost »"
+    fix "régénérez : npm run cert"
+  fi
+
+  MISSING=()
+  # Même source que gen-cert.sh (`hostname -I`) : ainsi, si l'on signale une
+  # adresse manquante, `npm run cert` la couvrira bien à la régénération.
+  # (On écarte le loopback, qui inclut sous WSL2 un alias /32 sans rapport.)
+  while IFS= read -r ip; do
+    [ -n "$ip" ] || continue
+    grep -qF "$ip" <<<"$SAN" || MISSING+=("$ip")
+  done < <(
+    hostname -I 2>/dev/null | tr ' ' '\n' |
+      grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' |
+      grep -v '^127\.' | grep -v '^169\.254\.' || true
+  )
+  if [ ${#MISSING[@]} -eq 0 ]; then
+    ok "couvre toutes les adresses IPv4 locales"
+  else
+    warn "ne couvre pas : ${MISSING[*]}"
+    fix "si la machine a changé d'adresse, régénérez : npm run cert"
+  fi
+
+  ISSUER="$(openssl x509 -in certs/cert.pem -noout -issuer 2>/dev/null || true)"
+  SUBJECT="$(openssl x509 -in certs/cert.pem -noout -subject 2>/dev/null || true)"
+  if [ "${ISSUER#issuer=}" = "${SUBJECT#subject=}" ]; then
+    info "certificat AUTO-SIGNÉ : le navigateur affichera un avertissement à accepter"
+    fix "sans aucun avertissement : Tailscale (docs/HTTPS-TAILSCALE.md)"
+  else
+    info "certificat émis par une autorité (${ISSUER#issuer=})"
+  fi
+fi
+
 head_ "Réseau"
 PORT="$(grep -E '^PORT=' .env 2>/dev/null | cut -d= -f2 || echo 8080)"
 PORT="${PORT:-8080}"

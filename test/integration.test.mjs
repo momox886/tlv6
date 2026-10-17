@@ -24,6 +24,10 @@ const server = spawn(process.execPath, [join(PROJECT, 'server', 'index.js')], {
     HEIGHT: '480',
     FPS: '30',
     PORT: String(PORT),
+    // Ce test parle HTTP : il doit le dire explicitement. Sans cela, un `.env`
+    // local avec TLS=1 ferait démarrer le serveur en HTTPS et le test échouerait
+    // — un test ne doit jamais dépendre de la configuration du développeur.
+    TLS: '0',
   },
   stdio: ['ignore', 'pipe', 'pipe'],
 });

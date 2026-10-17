@@ -115,13 +115,23 @@ Sur le casque : `https://<nom-machine>.<votre-tailnet>.ts.net/vr.html`
 **Option B — certificat auto-signé** (repli, sans Tailscale)
 
 ```bash
-bash scripts/gen-cert.sh              # crée certs/cert.pem + certs/key.pem
+npm run cert                          # crée certs/cert.pem + certs/key.pem
 TLS=1 npm start
 ```
 
-Sur le casque, ouvrez `https://<IP-du-PC>:8080/vr.html` et **acceptez
-l'avertissement** de certificat. Cela reste un contexte sécurisé valide : WebXR
-fonctionnera, mais l'avertissement reviendra à chaque visite.
+Le certificat couvre `localhost`, `127.0.0.1`, `::1`, le nom de la machine et
+**toutes les adresses IPv4 locales** — vous pouvez donc ouvrir
+`https://localhost:8080/` sur le PC *et* `https://<IP-du-PC>:8080/vr.html` sur le
+casque.
+
+Sur le casque, **acceptez l'avertissement** de certificat. Cela reste un contexte
+sécurisé valide : WebXR fonctionnera, mais l'avertissement reviendra à chaque
+visite. `certs/` est ignoré par git : la clé privée n'est jamais publiée.
+
+> ⚠️ Un certificat auto-signé est lié aux adresses qu'il contient. **Si l'adresse
+> IP de la machine change** (bail DHCP, autre réseau), il ne couvre plus rien et
+> le navigateur *refuse* la connexion au lieu de se contenter d'avertir. Dans ce
+> cas : `npm run cert`, puis rechargez. `npm run doctor` détecte ce cas.
 
 **Option C — autoriser l'origine en clair** (dépannage rapide, aucun certificat)
 
